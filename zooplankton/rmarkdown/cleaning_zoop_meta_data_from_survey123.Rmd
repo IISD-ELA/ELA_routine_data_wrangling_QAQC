@@ -1,0 +1,24 @@
+---
+title: "Cleaning Zoop Meta Data from Survey123"
+author: "CMDesjardins"
+date: "04/02/2021"
+output: 
+  html_document:
+    number_sections: true
+    keep_md: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r loading packages, include=FALSE}
+library(tidyverse)
+library(janitor)
+library(here)
+library(broom)
+library(lubridate)
+```
+
+```{r, loading csv output from Survey123, include=FALSE}
+df <- read_csv(here("raw_data", ""))
