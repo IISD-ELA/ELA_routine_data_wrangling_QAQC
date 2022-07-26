@@ -1,0 +1,69 @@
+---
+title: "Loading and cleaning spot sampled YSI data"
+author: "Cyndy Desjardins"
+date: "01/02/2022"
+output: 
+  html_document:
+    number_sections: true
+    keep_md: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r libraries, include=FALSE}
+
+library(tidyverse)
+library(janitor)
+library(here)
+library(lubridate)
+
+```
+
+```{r}
+
+source(here("YSI-spot_sampling", "functions", "read_ysi.R"))
+
+# Pepe's function requires the tidyverse, here and janitor. He wasnt going for a perfect-from-scratch package with zero dependencies and he knew that those of us who are going to use it probably load these packages to start with. It will load them inside of the function if they are not already loaded.
+
+```
+
+```{r, loading the data using Pepe's function that you just loaded, include = FALSE}
+
+data <- read_ysi(here("YSI-spot_sampling", "raw_data", "KorEXO Measurement File Export - 013122 133639.csv"), skip = 7)
+
+# The function requires two things:
+# - path to the file we want to lad
+# - number of initial rows to skip. 
+
+# This RMD script has been based on the original, raw csv output from the Kor-EXO software, which is standard, so you shouldn't have to change the number of rows to skip before starting to read the data, but you'll want to check that it's still 7, and change the skip = # below if the number of rows is in fact different. 
+
+# The data comes out as characters, though, so the fastest way to convert most of the data to numbers (where appropriate) is to write the file out, then read it right back in.
+write_csv(data, here("YSI-spot_sampling", "wrangled_data", "original_data_in_character_format.csv"))
+
+cleaned_data <- read_csv(here("YSI-spot_sampling", "wrangled_data", "original_data_in_character_format.csv")) %>% 
+  clean_names() %>% 
+  mutate(date_time_daylight = ymd_hms(paste(date_mm_dd_yyyy, time_hh_mm_ss, sep = " "))) %>% 
+  mutate(date_time_daylight = force_tz(date_time_daylight, tzone = "Etc/GMT+5")) %>% # R automatically assumes times are in UTC, so this just tells it that the time is actually in CDT since we collected this data in the summer
+  mutate(date_time_central = force_tz(date_time_daylight, tzone = "Canada/Central")) %>%  # this line forces the timezone in to Central time
+  select(-c("time_hh_mm_ss", "time_fract_sec", "wiper_position_volt", "battery_v", "cable_pwr_v", "date_time_daylight"))
+
+tz(cleaned_data$date_time_central) # this line just double checks that the timezone on your date_time column is now correct
+```
+
+```{r,additional data cleanup, include=FALSE}
+# Use this section to include any additional cleaning of the data you want to do. If you add anything to this section, put your name and the date to the title of this chunk (eg: additional data cleanup: Cyndy 2022-02-01), also I suggest you copy this rmarkdown file and keep it in the appropriate data archive folder that you keep the final output in. That way you'll have a record of what changes you made to the raw data. 
+# For example, the original YSI output for the YSI data from spot sampling the pELAstics enclosures had a couple of lines of data where I was just showing students how to record data, so obviously we don't want those lines in the final data set that's going to be used. Also, there were a couple of sites that were recorded incorrectly, that I will correct base on the field notes of the pELAstics crew. 
+
+```
+
+
+
+
+
+write_csv(cleaned_data, here("YSI-spot_sampling", "wrangled_data", "CHANGE_THIS_TO_THE_NAME_YOU_WANT_FOR_YOUR_FILE.csv"))
+
+
+```
+

@@ -21,4 +21,11 @@ library(lubridate)
 ```
 
 ```{r, loading csv output from Survey123, include=FALSE}
-df <- read_csv(here("raw_data", ""))
+df <- read_csv(here("zooplankton", "raw_data", "zooplankton_fieldcollection_filtration_meta_data_from_survey123", "survey_0.csv")) %>% 
+  clean_names() 
+  
+
+  df$collection_date <- as_datetime(df$collection_date, mdy_hms)
+
+
+```

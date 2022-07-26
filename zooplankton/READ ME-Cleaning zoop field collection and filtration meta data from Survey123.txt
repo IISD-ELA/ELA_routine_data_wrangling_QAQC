@@ -1,0 +1,16 @@
+Cleaning zoop field collection and filtration meta data from Survey123:
+
+1) Copy and paste the exported csv file as is from Survey123 into the ‘ELA_routine_data_wrangling_QAQC>zooplankton>raw_data’ folder on github. 
+
+*** VERY IMPORTANT: KEEP THE DEFAULT NAME “survey_0.csv” THAT SURVEY123 GIVES IT OR THE RMD FILE WON’T WORK! 
+Please note: you will change the name of it in R and save it once it's cleaned and QA/QCd later on... a copy of this raw file will always be kept in the PEG Teams folder here: 
+"Plankton Ecology-General>DATA-2019_and_later" then in the appropriate year and data type folder
+
+2) Open the ELA_routine_data_wrangling_QAQC project in R Studio, go into the zooplankton>rmarkdown folders and open the “cleaning_zoop_meta_data_from_survey123.Rmd” file.
+
+3) Run the rmd script.
+
+4) Check that the cleaned/QA+QCd file was saved properly (with the correct name, date, etc...) in the appropriate folder ('ELA_routine_data_wrangling_QAQC>zooplankton>wrangled_data')
+
+Please note: "wrangled data" means that it has been cleaned up and QA/QCd
+

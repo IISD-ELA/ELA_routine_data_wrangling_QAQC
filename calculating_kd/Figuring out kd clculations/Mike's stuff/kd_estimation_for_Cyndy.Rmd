@@ -1,0 +1,168 @@
+---
+title: "Light transmission"
+author: "Mike Paterson"
+date: "30/11/2020"
+output: 
+  html_document:
+    number_sections: true
+    keep_md: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, include = FALSE}
+library(tidyverse)
+library(lubridate)
+library(janitor)
+library(here)
+library(gt)
+library(broom)
+```
+# Data files
+
+F_par.csv file w light profiles from ELA lakes (1986-2019)
+attenuation.csv old_kd_estimates for ELA lakes (1968-1985)
+F_secchi.csv secchi disc measures from ELA lakes (1968-2019)
+
+```{r, message=FALSE}
+light_profiles <- read_csv(here("data_wrangling/data", "F_par.csv"),guess_max = 10000)
+light_profiles$date <- as_date(light_profiles$date,"Ymd")
+
+# WARNING: the F_PAR file does not have sub-basins in it, so needs to be updated for lakes with 2 or more basins
+
+old_kd_estimates <- read_csv(here("data_wrangling/data", "attenuation_a.csv"), guess_max = 10000)
+old_kd_estimates$date <- as_date(old_kd_estimates$date,"Ymd")
+secchi <- read_csv(here("data_wrangling/data", "field_observations.csv"), guess_max = 10000)
+secchi$date <- as_date(secchi$date,"Ymd")
+secchi$lake <- as.character(secchi$lake)
+secchi <- secchi %>%
+  select(c(lake, sublocation, station, date, year, start_time, epi_depth, planar_thermocline_depth, secchi, integrated_epi_start_d, integrated_epi_end_d))
+```
+Have a look at the data from one year from one lake.  If you want you could use PURR to generate plots for all years and lakes to scan through.  I generally look at the data and look for anomalous values and then check them (and remove them, if necessary)
+
+```{r, message=FALSE, warning=FALSE}
+light_profiles %>%
+  mutate(ln_light_ratio = log(light_percent/100)) %>%
+  filter(lake == 239, year == 2001, depth > 0) %>% # select L239 and 1988 as an example to look at the data
+  ggplot() +
+  facet_wrap(~date) +
+  geom_point(aes(x = depth, y = ln_light_ratio)) +
+  geom_smooth(aes(x = depth, y = ln_light_ratio), method = "lm")
+```
+# Fit linear models 
+
+log(percent light) vs depth for all dates, Lake 239
+
+```{r, message=FALSE, warning=FALSE}
+light_profiles_count <- light_profiles %>%
+    group_by(lake, date) %>%
+    summarize(count = n()) %>%
+    ungroup()
+
+light_profiles <- left_join(light_profiles, light_profiles_count)
+
+light_extinction_models <- light_profiles %>%
+  mutate(year = year(date)) %>%
+  filter(count>3) %>%   # only include profiles with at least 3 measurements
+#  filter(year > 2013 & year < 2020) %>%
+  mutate(ln_light_ratio = log(light_percent/100)) %>%
+  filter(flag != "yes", depth > 0) %>%     # these estimates don't use the air values 
+  group_by(lake, date) %>% 
+  nest() %>% 
+  mutate(model = pmap(list(data),
+                      ~ lm(ln_light_ratio ~ depth, data = ..1 )
+                      )
+         )
+```
+# Extract slope (Kd), intercept, r2, and p value for all regressions
+
+```{r, message=FALSE, warning=FALSE}
+kd_results <- light_extinction_models %>% 
+  mutate(slope = map_dbl(.x = model,
+                             ~ round(tidy(.x)$estimate[2], digits = 3)),
+         intercept = map_dbl(.x = model,
+                         ~ round(tidy(.x)$estimate[1], digits = 3)),
+         r_squared = map_dbl(.x = model,
+                             ~ round(glance(.x)$r.squared, digits = 3)),
+         p_value = map_dbl(.x = model,
+                             ~ round(glance(.x)$p.value, digits = 5))
+         
+  )
+
+print(kd_results)
+```
+# Extract Kd values to a csv file
+
+```{r, message=FALSE, warning=FALSE}
+kd_results$date <- as_date(kd_results$date,"Ymd")
+kd_results <- kd_results %>%
+  select(lake, date, slope, intercept, r_squared, p_value) %>%
+   mutate(year = year(date)) %>%
+  mutate(month = month(date)) %>%
+  write_csv(here("data_wrangling/wrangled_data", "kd-results_all_lakes.csv"))
+```
+
+# Join new estimates with old estimates to generate full data set covering all years. Then join with secchi disc data
+```{r, message=FALSE, warning=FALSE}
+old_kd_estimates$lake <- as.character(old_kd_estimates$lake)
+kd_results$date <- as_date(kd_results$date,"Ymd")
+kd_results$lake <- as.character(kd_results$lake)
+combined_light_data <- full_join(secchi, old_kd_estimates) %>% 
+   full_join(kd_results) 
+print(combined_light_data)
+```
+
+```{r, message=FALSE, warning=FALSE}
+
+combined_light_data3 <- combined_light_data %>%
+  mutate(kd_best_fit = replace_na(kd_best_fit, 0))%>% # remove NAs from old Kd estimates
+  mutate(kd_best_fit = kd_best_fit * -1) %>% 
+  mutate(kd_combined_data = if_else(kd_best_fit < 0, kd_best_fit, slope)) %>% 
+  #use previous estimate, if available, otherwise use calculated Kd
+  mutate(kd_best_fit = na_if(kd_best_fit, 0)) %>% 
+  select(lake, sublocation, date, year, month, jd, epi_depth, secchi, sublocation, station, kd_best_fit, kd_all, kd_combined_data)
+
+combined_light_data3$date <- as_date(combined_light_data3$date,"Ymd")
+
+combined_light_data3 %>%
+write_csv(here("data_wrangling/wrangled_data", "combined_light_data_all_lakes.csv"))
+
+seasonal_light <- combined_light_data3 %>% # calculate annual means by month for plotting
+  select(lake, date, year, month, epi_depth, secchi, kd_combined_data) %>%
+  pivot_longer(cols = c(-lake, -date, -year, -month), names_to = "parameter", values_to = "measure") %>%
+  group_by(lake, year, month, parameter) %>%
+  summarise(monthly_mean = mean(measure, na.rm = TRUE)) %>%
+  mutate(month_name = case_when(
+    month == "4" ~ "April",
+    month == "5" ~ "May",
+    month == "6" ~ "June",
+    month == "7" ~ "July",
+    month == "8" ~ "August",
+    month == "9" ~ "September",
+    month == "10" ~ "October",
+    month == "11" ~ "November",
+    month == "12" ~ "December"))
+
+#Calculate monthly means (you may not want this)
+
+seasonal_light %>%
+   pivot_wider(names_from = parameter, values_from = monthly_mean) %>%
+write_csv(here("data_wrangling/wrangled_data", "light_monthly_means_all_lakes.csv"))
+
+#Calculate summer means (again, you may not want this)
+
+annual_summer_light <- seasonal_light %>%
+  mutate(summer_flag = if_else(month_name == "June" | month_name == "July" | month_name == "August", 1, 0)) %>%
+  group_by(lake, year, parameter) %>%
+  summarise(months = sum(summer_flag, na.rm = TRUE), summer_mean = mean(monthly_mean, na.rm = TRUE))
+
+annual_summer_light$summer_mean[is.nan(annual_summer_light$summer_mean)]<-NA
+
+annual_summer_light %>%
+   pivot_wider(names_from = parameter, values_from = summer_mean) %>%
+  filter(months == 3) %>% #include only if data from all 3 months
+write_csv(here("data_wrangling/wrangled_data", "light_summer_means.csv"))
+```
+

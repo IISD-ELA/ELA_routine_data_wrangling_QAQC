@@ -1,0 +1,54 @@
+---
+title: "Calculating Extinction Coefficients (kd)"
+author: "Cyndy Desjardins"
+date: "01/03/2022"
+output: 
+  html_document:
+      keep_md: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r loading packages, include=FALSE}
+library(tidyverse)
+library(janitor)
+library(here)
+library(broom)
+library(lubridate)
+library(gt)
+```
+```{r, loading data, include=FALSE}
+light <- read_csv(here("calculating_kd", "raw_data", "light_raw_data.csv"))
+light <- light %>% 
+  mutate(depth = str_extract(Param, "(?<=PAR[:blank:]-[:blank:])[:graph:]+")) %>% # extracting the depths from the Param column... this gives us the depth with m next to it. We have to do it this way otherwise we lose the Air data. We can extract the m from the depths before we do the actual calculations
+  select(-Param) # deletes the param column as we no longer need it
+
+colnames(light) <- c("sample_id", "site", "date_time", "result", "depth") # renaming the columns for convenience
+
+
+avg <- light %>% 
+  filter(depth == "Air") %>% # filters out only the Air data
+  group_by(sample_id) %>% 
+  nest() %>% 
+  mutate(air_mean = pmap(list(data), 
+                      ~mean(..1$result)) # calculating the means of the Air light data
+         ) %>% 
+  select(-data) # delete the data column that we no longer need
+
+
+light <- light %>% 
+  filter(depth !="Air") %>% # removes the air data from the original data, we'll replace it with the means of the air data in the next chunk
+  mutate(depth = str_extract(depth, 
+                             "[:graph:]+(?=m)"))  # removes the m from the depths so that we're left with only numbers 
+
+light$depth <- as.numeric(light$depth) # changing the class of the depth column from character to numeric so that we can do calculations with it
+
+
+light <- left_join(light, avg, by="sample_id") %>% # adding the means of air light data back to the light profile data so we can calculate the percent light at each depth
+  mutate(percent_light = (result/air_mean)*100)
+
+  
+```
+
